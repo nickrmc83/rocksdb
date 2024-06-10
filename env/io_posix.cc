@@ -210,12 +210,16 @@ PosixSequentialFile::PosixSequentialFile(const std::string& fname, FILE* file,
     : filename_(fname),
       file_(file),
       fd_(fd),
+      once_(),
       use_direct_io_(options.use_direct_reads),
       logical_sector_size_(logical_block_size) {
   assert(!options.use_direct_reads || !options.use_mmap_reads);
 }
 
 PosixSequentialFile::~PosixSequentialFile() {
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixSequentialFile already closed fd=%d file=%s\n", fd_, filename_);
+  }
   if (!use_direct_io()) {
     assert(file_);
     fclose(file_);
@@ -456,7 +460,6 @@ Status PosixHelper::GetLogicalBlockSizeOfDirectory(const std::string& directory,
                                                    size_t* size) {
   int fd = open(directory.c_str(), O_DIRECTORY | O_RDONLY);
   if (fd == -1) {
-    close(fd);
     return Status::IOError("Cannot open directory " + directory);
   }
   *size = PosixHelper::GetLogicalBlockSizeOfFd(fd);
@@ -549,6 +552,7 @@ PosixRandomAccessFile::PosixRandomAccessFile(
     )
     : filename_(fname),
       fd_(fd),
+      once_(),
       use_direct_io_(options.use_direct_reads),
       logical_sector_size_(logical_block_size)
 #if defined(ROCKSDB_IOURING_PRESENT)
@@ -560,7 +564,12 @@ PosixRandomAccessFile::PosixRandomAccessFile(
   assert(!options.use_mmap_reads);
 }
 
-PosixRandomAccessFile::~PosixRandomAccessFile() { close(fd_); }
+PosixRandomAccessFile::~PosixRandomAccessFile() { 
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixRandomAccessFile already closed fd=%d file=%s\n", fd_, filename_);
+  }
+  close(fd_); 
+}
 
 IOStatus PosixRandomAccessFile::Read(uint64_t offset, size_t n,
                                      const IOOptions& /*opts*/, Slice* result,
@@ -934,7 +943,7 @@ PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
                                              const std::string& fname,
                                              void* base, size_t length,
                                              const EnvOptions& options)
-    : fd_(fd), filename_(fname), mmapped_region_(base), length_(length) {
+    : fd_(fd), once_(), filename_(fname), mmapped_region_(base), length_(length) {
 #ifdef NDEBUG
   (void)options;
 #endif
@@ -944,6 +953,9 @@ PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
 }
 
 PosixMmapReadableFile::~PosixMmapReadableFile() {
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixMmapReadableFile already closed fd=%d file=%s\n", fd_, filename_);
+  }
   int ret = munmap(mmapped_region_, length_);
   if (ret != 0) {
     fprintf(stdout, "failed to munmap %p length %" ROCKSDB_PRIszt " \n",
@@ -1094,6 +1106,7 @@ PosixMmapFile::PosixMmapFile(const std::string& fname, int fd, size_t page_size,
                              const EnvOptions& options)
     : filename_(fname),
       fd_(fd),
+      once_(),
       page_size_(page_size),
       map_size_(Roundup(65536, page_size)),
       base_(nullptr),
@@ -1152,6 +1165,11 @@ IOStatus PosixMmapFile::Append(const Slice& data, const IOOptions& /*opts*/,
 IOStatus PosixMmapFile::Close(const IOOptions& /*opts*/,
                               IODebugContext* /*dbg*/) {
   IOStatus s;
+
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixMmapFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+  }
+
   size_t unused = limit_ - dst_;
 
   s = UnmapCurrentRegion();
@@ -1275,6 +1293,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
       fd_(fd),
+      once_(),
       filesize_(0),
       logical_sector_size_(logical_block_size) {
 #ifdef ROCKSDB_FALLOCATE_PRESENT
@@ -1346,6 +1365,10 @@ IOStatus PosixWritableFile::Truncate(uint64_t size, const IOOptions& /*opts*/,
 IOStatus PosixWritableFile::Close(const IOOptions& /*opts*/,
                                   IODebugContext* /*dbg*/) {
   IOStatus s;
+
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixWritableFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+  }
 
   size_t block_size;
   size_t last_allocated_block;
@@ -1535,7 +1558,7 @@ size_t PosixWritableFile::GetUniqueId(char* id, size_t max_size) const {
 
 PosixRandomRWFile::PosixRandomRWFile(const std::string& fname, int fd,
                                      const EnvOptions& /*options*/)
-    : filename_(fname), fd_(fd) {}
+    : filename_(fname), fd_(fd), once_() {}
 
 PosixRandomRWFile::~PosixRandomRWFile() {
   if (fd_ >= 0) {
@@ -1624,6 +1647,10 @@ IOStatus PosixRandomRWFile::Fsync(const IOOptions& /*opts*/,
 
 IOStatus PosixRandomRWFile::Close(const IOOptions& /*opts*/,
                                   IODebugContext* /*dbg*/) {
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixRandomRWFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+  }
+
   if (close(fd_) < 0) {
     return IOError("While close random read/write file", filename_, errno);
   }
@@ -1644,7 +1671,7 @@ PosixMemoryMappedFileBuffer::~PosixMemoryMappedFileBuffer() {
 #define BTRFS_SUPER_MAGIC 0x9123683E
 #endif
 PosixDirectory::PosixDirectory(int fd, const std::string& directory_name)
-    : fd_(fd), directory_name_(directory_name) {
+    : fd_(fd), once_(), directory_name_(directory_name) {
   is_btrfs_ = false;
 #ifdef OS_LINUX
   struct statfs buf;
@@ -1669,6 +1696,10 @@ IOStatus PosixDirectory::Fsync(const IOOptions& opts, IODebugContext* dbg) {
 // Fsync or FsyncWithDirOptions function before Close
 IOStatus PosixDirectory::Close(const IOOptions& /*opts*/,
                                IODebugContext* /*dbg*/) {
+  if (!once_.Do()) {
+    fprintf(stderr, "PosixDirectory::Close already closed closed=%d fd=%d dir=%s", fd_, directory_name_);
+  }
+
   IOStatus s = IOStatus::OK();
   if (close(fd_) < 0) {
     s = IOError("While closing directory ", directory_name_, errno);
@@ -1703,9 +1734,11 @@ IOStatus PosixDirectory::FsyncWithDirOptions(
       } else if (fsync(fd) < 0) {
         s = IOError("While fsync renaming file", new_name, errno);
       }
-      if (close(fd) < 0) {
-        s = IOError("While closing file after fsync", new_name, errno);
-      }
+      if (fd >= 0) {
+        if (close(fd) < 0) {
+          s = IOError("While closing file after fsync", new_name, errno);
+        }
+        }
       return s;
     }
     // fallback to dir-fsync for kDefault, kDirRenamed and kFileDeleted

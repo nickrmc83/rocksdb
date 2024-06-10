@@ -7,6 +7,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #pragma once
+#include <atomic>
 #include <errno.h>
 #if defined(ROCKSDB_IOURING_PRESENT)
 #include <liburing.h>
@@ -71,6 +72,19 @@ inline bool IsSectorAligned(const void* ptr, size_t sector_size) {
   return uintptr_t(ptr) % sector_size == 0;
 }
 #endif
+
+// Once just wraps around an atomic to determine if something has been done more than once.
+struct Once {
+  private:
+    std::atomic<ssize_t> counter_;
+  public:
+    explicit Once() : counter_(0) {}
+
+    // Return true iff first call.
+    bool Do() {
+      return (++counter_ == 1) ;
+    }
+};
 
 #if defined(ROCKSDB_IOURING_PRESENT)
 struct Posix_IOHandle {
@@ -237,6 +251,7 @@ class PosixSequentialFile : public FSSequentialFile {
   std::string filename_;
   FILE* file_;
   int fd_;
+  Once once_;
   bool use_direct_io_;
   size_t logical_sector_size_;
 
@@ -282,6 +297,7 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
  protected:
   std::string filename_;
   int fd_;
+  Once once_;
   bool use_direct_io_;
   size_t logical_sector_size_;
 #if defined(ROCKSDB_IOURING_PRESENT)
@@ -330,6 +346,7 @@ class PosixWritableFile : public FSWritableFile {
   const std::string filename_;
   const bool use_direct_io_;
   int fd_;
+  Once once_;
   uint64_t filesize_;
   size_t logical_sector_size_;
 #ifdef ROCKSDB_FALLOCATE_PRESENT
@@ -398,6 +415,7 @@ class PosixWritableFile : public FSWritableFile {
 class PosixMmapReadableFile : public FSRandomAccessFile {
  private:
   int fd_;
+  Once once_;
   std::string filename_;
   void* mmapped_region_;
   size_t length_;
@@ -416,6 +434,7 @@ class PosixMmapFile : public FSWritableFile {
  private:
   std::string filename_;
   int fd_;
+  Once once_;
   size_t page_size_;
   size_t map_size_;       // How much extra memory to map at a time
   char* base_;            // The mapped region
@@ -494,6 +513,7 @@ class PosixRandomRWFile : public FSRandomRWFile {
  private:
   const std::string filename_;
   int fd_;
+  Once once_;
 };
 
 struct PosixMemoryMappedFileBuffer : public MemoryMappedFileBuffer {
@@ -516,6 +536,7 @@ class PosixDirectory : public FSDirectory {
 
  private:
   int fd_;
+  Once once_;
   bool is_btrfs_;
   const std::string directory_name_;
 };
