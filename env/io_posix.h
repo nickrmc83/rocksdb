@@ -74,7 +74,7 @@ inline bool IsSectorAligned(const void* ptr, size_t sector_size) {
 #endif
 
 // Once just wraps around an atomic to determine if something has been done more than once.
-struct Once {
+class Once {
   private:
     std::atomic<ssize_t> counter_;
   public:

@@ -218,7 +218,7 @@ PosixSequentialFile::PosixSequentialFile(const std::string& fname, FILE* file,
 
 PosixSequentialFile::~PosixSequentialFile() {
   if (!once_.Do()) {
-    fprintf(stderr, "PosixSequentialFile already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixSequentialFile already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
   if (!use_direct_io()) {
     assert(file_);
@@ -566,7 +566,7 @@ PosixRandomAccessFile::PosixRandomAccessFile(
 
 PosixRandomAccessFile::~PosixRandomAccessFile() { 
   if (!once_.Do()) {
-    fprintf(stderr, "PosixRandomAccessFile already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixRandomAccessFile already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
   close(fd_); 
 }
@@ -954,7 +954,7 @@ PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
 
 PosixMmapReadableFile::~PosixMmapReadableFile() {
   if (!once_.Do()) {
-    fprintf(stderr, "PosixMmapReadableFile already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixMmapReadableFile already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
   int ret = munmap(mmapped_region_, length_);
   if (ret != 0) {
@@ -1167,7 +1167,7 @@ IOStatus PosixMmapFile::Close(const IOOptions& /*opts*/,
   IOStatus s;
 
   if (!once_.Do()) {
-    fprintf(stderr, "PosixMmapFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixMmapFile::Close already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
 
   size_t unused = limit_ - dst_;
@@ -1367,7 +1367,7 @@ IOStatus PosixWritableFile::Close(const IOOptions& /*opts*/,
   IOStatus s;
 
   if (!once_.Do()) {
-    fprintf(stderr, "PosixWritableFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixWritableFile::Close already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
 
   size_t block_size;
@@ -1648,7 +1648,7 @@ IOStatus PosixRandomRWFile::Fsync(const IOOptions& /*opts*/,
 IOStatus PosixRandomRWFile::Close(const IOOptions& /*opts*/,
                                   IODebugContext* /*dbg*/) {
   if (!once_.Do()) {
-    fprintf(stderr, "PosixRandomRWFile::Close already closed fd=%d file=%s\n", fd_, filename_);
+    fprintf(stderr, "PosixRandomRWFile::Close already closed fd=%d file=%s\n", fd_, filename_.c_str());
   }
 
   if (close(fd_) < 0) {
@@ -1697,7 +1697,7 @@ IOStatus PosixDirectory::Fsync(const IOOptions& opts, IODebugContext* dbg) {
 IOStatus PosixDirectory::Close(const IOOptions& /*opts*/,
                                IODebugContext* /*dbg*/) {
   if (!once_.Do()) {
-    fprintf(stderr, "PosixDirectory::Close already closed closed=%d fd=%d dir=%s", fd_, directory_name_);
+    fprintf(stderr, "PosixDirectory::Close already closed fd=%d dir=%s\n", fd_, directory_name_.c_str());
   }
 
   IOStatus s = IOStatus::OK();
